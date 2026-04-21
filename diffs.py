@@ -9,12 +9,30 @@ import math
 from skimage import color
 import time
 import statistics
-BACKGROUND = "white"
-FOREGROUND = "black"
 
-COLOURWAY_DIR = "/home/edward/New_Diffs/colourways"
-DIFF_DIR = "/home/edward/New_Diffs/diffs"
-OUTPUT_DIR = "/home/edward/New_Diffs/output"
+G_colourway_dir = ""
+G_diff_dir = ""
+G_output_dir = ""
+G_background = ""
+G_entry_background = ""
+G_text_colour = ""
+G_active_btn_col = ""
+G_inactive_btn_col = ""
+
+
+def read_settings():
+    global G_colourway_dir,G_diff_dir,G_output_dir,G_background,G_text_colour, G_active_btn_col, G_inactive_btn_col, G_entry_background
+    with open("settings.txt","r") as file:
+        raw_file = file.read()
+        lines = raw_file.split("\n")
+        G_colourway_dir = lines[0].split("=")[0]
+        G_diff_dir = lines[1].split("=")[0]
+        G_output_dir = lines[2].split("=")[0]
+        G_background = lines[3].split("=")[0]
+        G_text_colour= lines[4].split("=")[0]
+        G_active_btn_col = lines[5].split("=")[0]
+        G_inactive_btn_col = lines[6].split("=")[0]
+        G_entry_background = lines[7].split("=")[0]
 
 class AVAColourway:
     def __init__(self, *colours, name="", locked="false", ):
@@ -178,6 +196,7 @@ class AVAXML:
             return colourways
 
     def create_AVA_colourway_file(*colourways, name):
+        global G_output_dir
         header = '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>AVA_Colourway_Info</key><string>2.0</string><key>colourways</key><array>'
         footer = '</array><key>docInfo</key><dict><key>doc-UUID</key><string>432E04AE-2159-4EFF-BB38-B790F53B6FCF</string></dict></dict></plist>'
         current_text = header
@@ -185,7 +204,7 @@ class AVAXML:
         for each in cways:
             current_text += AVAXML.format_xml_colourway_string(each)
         current_text += footer
-        with open(OUTPUT_DIR+"/"+name, "w") as text_file:
+        with open(G_output_dir+"/"+name, "w") as text_file:
             text_file.write(current_text)
 
     def format_xml_colourway_string(colway):
@@ -209,8 +228,9 @@ class AVAXML:
 
 class AVADiffs:
     def load_diffs(filename):  # Returns a tuple containing master and sample colours (Sample1, Master1, S2, M2 ....)
+        global G_diff_dir
         cols = []
-        with open(DIFF_DIR+"/"+filename, 'r') as file:
+        with open(G_diff_dir+"/"+filename, 'r') as file:
             raw_read = file.read().replace("\t",",")
             lines = raw_read.split("\n")
             remove_header = lines[2:]
@@ -246,10 +266,10 @@ def get_delta_e(lab1, lab2) -> float:
 class Application(tk.Tk):
     def __init__(self,*args,**kwargs):
         tk.Tk.__init__(self,*args,**kwargs)
-        container = tk.Frame(self)
-        m = self.maxsize()
-        #self.geometry()
+        read_settings()
+        container = tk.Frame(self,bg=G_background)
         self.attributes("-fullscreen", False)
+        #self.wm_attributes('-type', 'splash')
         container.pack(side="top",fill="both",expand=True)
         container.grid_rowconfigure(0,weight=1)
         container.grid_columnconfigure(0,weight=1)    
@@ -261,6 +281,7 @@ class Application(tk.Tk):
             self.frames[each] = frame
             frame.grid(row=0,column=0,sticky="nsew")
         
+        self.bind("<Escape>", exit)
         self.show_frame(MainScreen)
         self.mainloop()
     
@@ -279,24 +300,26 @@ class Application(tk.Tk):
         self.frames[ColourScreen].display_colourways(self.colourways)
     
     def save_colourway_pressed(self):
+        global G_diff_dir, G_colourway_dir
         current_diff_file = self.frames[ColourScreen].diff_entry.get()
-        if os.path.exists(DIFF_DIR+"/"+current_diff_file):
-            os.remove(DIFF_DIR+"/"+current_diff_file)
+        if os.path.exists(G_diff_dir+"/"+current_diff_file):
+            os.remove(G_diff_dir+"/"+current_diff_file)
         AVAXML.create_AVA_colourway_file(self.colourways,name=self.frames[MainScreen].load_entry.get()+"_OUT")
         current_cway_file = self.frames[MainScreen].load_entry.get()
-        if os.path.exists(COLOURWAY_DIR+"/"+current_cway_file):
-            os.remove(COLOURWAY_DIR+"/"+current_cway_file)
+        if os.path.exists(G_colourway_dir+"/"+current_cway_file):
+            os.remove(G_colourway_dir+"/"+current_cway_file)
         ColourScreen.clear_diffs(self.frames[ColourScreen])
         self.show_frame(MainScreen)
 
     def load_diffs_pressed(self):
+        global G_text_colour, G_background
         string = self.frames[ColourScreen].diff_entry.get()
         if string == "":
             return
         else:
             loaded_diffs = AVADiffs.load_diffs(string)
             self.frames[ColourScreen].deltaE.set(round(statistics.mean(loaded_diffs[1]),2))
-            self.frames[ColourScreen].deltaE_label.config(fg=FOREGROUND)
+            self.frames[ColourScreen].deltaE_label.config(fg=G_text_colour,bg=G_background)
             ColourScreen.display_diffs(self.frames[ColourScreen],loaded_diffs[0])
 
     def add_multiple_diffs_pressed(self):
@@ -381,9 +404,11 @@ class Application(tk.Tk):
 
 class MainScreen(tk.Frame):
     def __init__(self,parent,controller):
+        global G_entry_background,G_text_colour
         tk.Frame.__init__(self,parent)
-        load_button = tk.Button(self,text="Load Colourway",command=lambda param=self:Application.load_colourway_pressed(controller))
-        self.load_entry = tk.Entry(self)
+        self.config(bg=G_background)
+        load_button = tk.Button(self,text="Load Colourway",command=lambda param=self:Application.load_colourway_pressed(controller),bg=G_active_btn_col,fg=G_text_colour)
+        self.load_entry = tk.Entry(self,bg=G_entry_background,fg=G_text_colour)
         self.load_entry.grid(row=0,column=0)
         load_button.grid(row=0,column=1)
 
@@ -391,11 +416,12 @@ class MainScreen(tk.Frame):
         threading.Thread(target=self.colourway_watcher,daemon=True).start()
 
     def colourway_watcher(self):
+        global G_colourway_dir
         print("Colourway Watcher Started")
         while True:
             time.sleep(0.5)
-            files = os.listdir(COLOURWAY_DIR)
-            files = [f for f in files if os.path.isfile(COLOURWAY_DIR+'/'+f)]
+            files = os.listdir(G_colourway_dir)
+            files = [f for f in files if os.path.isfile(G_colourway_dir+'/'+f)]
             for each in files:
                 if ".cway" in each:
                     self.load_entry.delete(0,tk.END)
@@ -407,46 +433,49 @@ class MainScreen(tk.Frame):
 class ColourScreen(tk.Frame):
     def __init__(self,parent,controller):
         tk.Frame.__init__(self,parent)
+        self.config(bg=G_background)
         self.stored_cways = []
         self.selected_cway = tk.StringVar()
         self.boxes = []
         self.diffs = []
         self.deltaE = tk.StringVar()
 
-        self.diff_entry = tk.Entry(self)
+        self.diff_entry = tk.Entry(self,bg=G_entry_background,fg=G_text_colour)
         self.diff_entry.grid(row=0,column=2)
         self.diff_entry.config(width=10)
-        self.diff_load_button = tk.Button(self,text="Load Diffs",command=lambda param=self:Application.load_diffs_pressed(controller))
+        self.diff_load_button = tk.Button(self,text="Load Diffs",command=lambda param=self:Application.load_diffs_pressed(controller),bg=G_active_btn_col, fg=G_text_colour)
         self.diff_load_button.grid(row=0,column=1)
-        self.diff_multi_add_button = tk.Button(self,text="Add multiple",command=lambda param=self:Application.add_multiple_diffs_pressed(controller))
+        self.diff_load_button.config(state='disabled',bg=G_inactive_btn_col)
+        self.diff_multi_add_button = tk.Button(self,text="Add multiple",command=lambda param=self:Application.add_multiple_diffs_pressed(controller),bg=G_active_btn_col,fg=G_text_colour)
         self.diff_multi_add_button.grid(row=0,column=4)
-        self.diff_multi_add_button.config(state='disabled')
-        self.diff_apply_button = tk.Button(self,text="Apply Diffs",command=lambda param=self:Application.apply_diffs_to_layer_pressed(controller))
+        self.diff_multi_add_button.config(state='disabled',bg=G_inactive_btn_col)
+        self.diff_apply_button = tk.Button(self,text="Apply Diffs",command=lambda param=self:Application.apply_diffs_to_layer_pressed(controller),bg=G_active_btn_col,fg=G_text_colour)
         self.diff_apply_button.grid(row=0,column=3)
-        self.diff_apply_button.config(state='disabled')
-        self.diff_num_added_entry = tk.Entry(self)
+        self.diff_apply_button.config(state='disabled',bg=G_inactive_btn_col)
+        self.diff_num_added_entry = tk.Entry(self,bg=G_entry_background,fg=G_text_colour)
         self.diff_num_added_entry.grid(row=0,column=5)
         self.diff_num_added_entry.config(width=5)
-        self.deltaE_label = tk.Label(self, text="ΔE")
-        self.deltaE_label.config(fg="#D3D3D3")
+        self.deltaE_label = tk.Label(self, text="ΔE",bg=G_background,fg=G_background)
         self.deltaE_label.grid(row=0,column=7)
-        self.deltaE_display = tk.Label(self,textvariable=self.deltaE)
+        self.deltaE_display = tk.Label(self,textvariable=self.deltaE,bg=G_background,fg=G_text_colour)
         self.deltaE_display.grid(row=0,column=8)
-        save_button = tk.Button(self,text="Save", command=lambda param=self:Application.save_colourway_pressed(controller))
+        save_button = tk.Button(self,text="Save", command=lambda param=self:Application.save_colourway_pressed(controller),bg=G_active_btn_col,fg=G_text_colour)
         save_button.grid(row=0,column=6)
 
     def on_raise(self):
         threading.Thread(target=self.diff_watcher,daemon=True).start()
 
     def diff_watcher(self):
+        global G_diff_dir
         print("Diff Watcher Started")
         while True:
             time.sleep(0.5)
-            files = os.listdir(DIFF_DIR)
-            files = [f for f in files if os.path.isfile(DIFF_DIR+"/"+f)]
+            files = os.listdir(G_diff_dir)
+            files = [f for f in files if os.path.isfile(G_diff_dir+"/"+f)]
             for each in files:
                 self.diff_entry.delete(0,tk.END)
                 self.diff_entry.insert(0,each)
+                self.diff_load_button.config(state='normal',bg=G_active_btn_col)
                 return
             self.diff_entry.delete(0,tk.END)
 
@@ -470,7 +499,7 @@ class ColourScreen(tk.Frame):
             cols = self.stored_cways[i].get_colours()
             for j in range(len(cols)):
                 col_numbs.append(str(j+1)+". "+cols[j].name)
-        colourway_selector = ttk.Combobox(self,textvariable=self.selected_cway,values=cway_numbs)
+        colourway_selector = ttk.Combobox(self,textvariable=self.selected_cway,values=cway_numbs,background=G_entry_background,foreground=G_text_colour)
         colourway_selector.grid(row=0,column=0)
         #if self.selected_cway.get() == "":
         if retain == False:
@@ -486,12 +515,12 @@ class ColourScreen(tk.Frame):
                     component.destroy()
             self.diffs = []
         self.deltaE.set("")
-        self.deltaE_label.config(fg="#D3D3D3")
+        self.deltaE_label.config(fg=G_background)
     
     def display_diffs(self,diffs):
         rows = 1
-        self.diff_multi_add_button.config(state='normal')
-        self.diff_apply_button.config(state='normal')
+        self.diff_multi_add_button.config(state='normal',bg=G_active_btn_col)
+        self.diff_apply_button.config(state='normal',bg=G_active_btn_col)
         if len(self.diffs) > 0:
             for diff in self.diffs:
                 for component in diff:
@@ -501,16 +530,17 @@ class ColourScreen(tk.Frame):
             sample = diffs[i]
             master = diffs[i+1]
             difference = (master.values['lab'][0] - sample.values['lab'][0],master.values['lab'][1] - sample.values['lab'][1],master.values['lab'][2] - sample.values['lab'][2])
-            d_l = ttk.Label(self,text=round(difference[0],2))
+            d_l = ttk.Label(self,text=round(difference[0],2),background=G_background,foreground=G_text_colour)
             d_l.grid(row=rows,column=5)
-            d_a = ttk.Label(self,text=round(difference[1],2))
+            d_a = ttk.Label(self,text=round(difference[1],2),background=G_background,foreground=G_text_colour)
             d_a.grid(row=rows,column=6)
-            d_b = ttk.Label(self,text=round(difference[2],2))
+            d_b = ttk.Label(self,text=round(difference[2],2),background=G_background,foreground=G_text_colour)
             d_b.grid(row=rows,column=7)
             self.diffs.append((d_l,d_a,d_b))
             rows += 1
     
     def select_cway(self, cway_number):
+        global G_background
         print("cway_number", cway_number)
         if len(self.boxes) > 0:
             for row in self.boxes:
@@ -519,38 +549,22 @@ class ColourScreen(tk.Frame):
         index = cway_number.split('.')
         crow = 1
         for colour in self.stored_cways[int(index[0])-1].get_colours():
-            cname = ttk.Label(self,text=colour.name)
+            cname = ttk.Label(self,text=colour.name,background=G_background,foreground=G_text_colour)
             cname.grid(row=crow,column=0)
             lab = colour.values['lab']
-            c_l = ttk.Label(self,text=round(lab[0],2))
+            c_l = ttk.Label(self,text=round(lab[0],2),foreground=G_text_colour)
             c_l.grid(row=crow,column=1,padx=2)
-            c_a = ttk.Label(self,text=round(lab[1],2))
+            c_a = ttk.Label(self,text=round(lab[1],2),foreground=G_text_colour)
             c_a.grid(row=crow,column=2,padx=2)
-            c_b = ttk.Label(self,text=round(lab[2],2))
+            c_b = ttk.Label(self,text=round(lab[2],2),foreground=G_text_colour)
             c_b.grid(row=crow,column=3,padx=2)
             for each in [c_l,c_a,c_b]:
-                each.config(width=10,background=BACKGROUND)
-            c_display = tk.Label(self,bg=BACKGROUND)
+                each.config(width=10,background=G_background)
+            c_display = tk.Label(self,bg=G_background)
             c_display.config(bg=(lab_to_hex_rgb((lab[0],lab[1],lab[2]))),width=10)
             c_display.grid(row=crow,column=4)
             self.boxes.append((cname,c_l,c_a,c_b,c_display))
             crow += 1
 
-        
-"""
-    def update_col_display(event=None):
-        col_display.config(bg=(lab_to_hex_rgb((float(l_entry.get()),float(a_entry.get()),float(b_entry.get())))))
-        col_display = Label(root,width=20,bg="white",height=4)
-        col_display.grid(row=4,column=0)
-
-
-newcol = AVAColour(name="labcolour", lab=(82.45980892, 5.14516228,30.83633068))
-newcol3 = AVAColour(name="morergb", rgb=(60399, 51427, 37945))
-
-newcway3 = AVAColourway((newcol,newcol3),name="Third Colourway", locked="false")
-colways = AVAXML.extract_colourways_from_xml("colourway_file.cway")
-colways.append(newcway3)
-colways.append(newcway3)
-"""
 
 Application()
