@@ -19,6 +19,8 @@ G_text_colour = ""
 G_active_btn_col = ""
 G_inactive_btn_col = ""
 
+G_loaded_UUID = ""
+G_space_needed = [400,45]
 
 def read_settings():
     global G_colourway_dir,G_diff_dir,G_output_dir,G_background,G_text_colour, G_active_btn_col, G_inactive_btn_col, G_entry_background
@@ -54,79 +56,66 @@ class AVAColourway:
             each.print()
 
 class AVAColour:
-    def __init__(self, name="", rgb=None, xyz="", ref="", lab=None, uuid=""):
+    def __init__(self, name="", rgb=None, xyz="", ref="", lab=None, uuid="",diff=False):
         self.name = name
         self.uuid = uuid
         self.values = {}
+        self.ref_found = 0
+        self.xyz_found = 0
+        self.lab_found = 0
+        self.rgb_found = 0
+        ## RGB Format (integers 0-65535, 0-65535, 0-65535)
+        ## XYZ Format (floats 0-100, 0-100, 0-100)
         
-        if xyz:
-            self.values['xyz'] = xyz
-        if ref:
-            self.values['ref'] = ref
-        else:
-            self.values['ref'] = ""
         if rgb:
-            self.values['rgb'] = rgb
-            small_rgb = []
-            for i in range(3):
-                small_rgb.append(rgb[i]/65536)
-            convertedtolab = color.rgb2lab(small_rgb)
-            convertedtoxyz = color.rgb2xyz(small_rgb)
-            newxyz = []
-            newlab = []
-            for each in convertedtolab:
-                newlab.append(float(each))
-            for i in range(3):
-                newxyz.append(float(convertedtoxyz[i]))
-            self.values['lab'] = newlab
-            self.values['xyz'] = newxyz
-        elif lab:
-            raw_rgb = color.lab2rgb(lab)
-            new_rgb = []
-            raw_xyz = color.lab2xyz(lab)
-            new_xyz = []
-            for i in range(3):
-                new_rgb.append(int(raw_rgb[i]*65536))
-                new_xyz.append(float(raw_xyz[i]))
-            self.values['rgb'] = new_rgb
-            self.values['xyz'] = new_xyz
-            self.values['lab'] = lab
-
+            self.rgb_found = 1
+            self.values['rgb']=rgb
+            print("RGB Found: " + str(self.values['rgb']))
+        if ref:
+            self.ref_found = 1
+            self.values['ref']=ref
+            print("REF Found: " + str(len(self.values['ref']))+" values")
+        if xyz:
+            self.xyz_found = 1
+            self.values['xyz']=xyz
+            print("XYZ Found: " + str(self.values['xyz']))
+        if lab:
+            self.lab_found = 1
+            self.values['lab']=lab
+            print("LAB Found: " + str(self.values['lab']))
+        
+        if self.ref_found == 0 and diff==False:
+            self.values['ref'] = ""
+            print("No Ref Found: Setting to Blank")
+        
+        if self.lab_found == 0 and diff==False:
+            print("No Lab found")
+            if self.xyz_found:
+                temp = color.xyz2lab((float(xyz[0])/100,float(xyz[1])/100,float(xyz[2])/100))
+                self.values['lab'] = temp
+                print(str(xyz)+ ": XYZ to LAB:" + str(temp))
+        
+        if self.xyz_found == 0 and diff==False:
+            print("no XYZ found")
+            if self.lab_found:
+                self.values['xyz'] = labtoxyz(lab)
+                
+        if self.rgb_found == 0 and diff==False:
+            print("no RGB found")
+            self.values['rgb'] = labtorgb(lab)
+            
     def print(self):
         print("Colour Name:", self.name, "LAB:",self.values['lab'],"RGB:", self.values['rgb'])
         
-    def set(self,key,value=0):
-        print("Setting colour", self.name, "::" + key + ":: =", value)
-        if key == 'lab': # value is a tuple (L,A,B)
-            raw_rgb = color.lab2rgb(value)
-            new_rgb = []
-            raw_xyz = color.lab2xyz(value)
-            new_xyz = []
-            for i in range(3):
-                new_rgb.append(int(raw_rgb[i]*65536))
-                new_xyz.append(float(raw_xyz[i]))
-            self.values['rgb'] = new_rgb
-            self.values['xyz'] = new_xyz
-            self.values['lab'] = value
-        if key == 'rgb':
-            self.values['rgb'] = value
-            small_rgb = []
-            for i in range(3):
-                small_rgb.append(value[i]/65536)
-            convertedtolab = color.rgb2lab(small_rgb)
-            convertedtoxyz = color.rgb2xyz(small_rgb)
-            newxyz = []
-            newlab = []
-            for each in convertedtolab:
-                newlab.append(float(each))
-            for i in range(3):
-                newxyz.append(float(convertedtoxyz[i]))
-            self.values['lab'] = newlab
-            self.values['xyz'] = newxyz
-        if key == 'name':
-            self.name = value
-        if key == 'uuid':
-            self.uuid = value
+    def changelab(self,newlab):
+        print("Setting colour", self.name + "lab to" + str(newlab))
+        self.values['lab'] = newlab
+        self.values['rgb'] = labtorgb(newlab)
+        self.values['xyz'] = labtoxyz(newlab)
+        print("Changed Colour:" + self.name + "LAB: " + str(newlab) + "RGB:" + str(self.values['rgb']) + "XYZ" + str(self.values['xyz']))
+
+    def setname(self,newname):
+        self.name = newname
 
 class AVAXML:
     def extract_value(data, chosen_value="name", start="<string>",end="</string>"):
@@ -156,12 +145,15 @@ class AVAXML:
         return (name, rgb, xyz, ref)
 
     def extract_colourways_from_xml(filename):
+        global G_loaded_UUID
         colourways = []
         with open(filename, 'r') as file:
             header = '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>AVA_Colourway_Info</key><string>2.0</string><key>colourways</key><array>'
-            footer = '</array><key>docInfo</key><dict><key>doc-UUID</key><string>432E04AE-2159-4EFF-BB38-B790F53B6FCF</string></dict></dict></plist>'
-            raw_file = file.read().replace("\n", "").replace("\t","").replace(header,"").replace(footer,"") #file with removed header + footer
-            stripped_colourways = raw_file.split("<dict><key>layers</key><array>")
+            raw_file = file.read().replace("\n", "").replace("\t","") # removed spaces and linebreaks
+            footer = raw_file[-126:]
+            G_loaded_UUID = AVAXML.extract_value(footer,"doc-UUID")
+            removed_header = raw_file.replace(header,"").replace(footer,"") #file with removed header + footer
+            stripped_colourways = removed_header.split("<dict><key>layers</key><array>")
             for colway in stripped_colourways:
                 if colway:
                     cway_name = AVAXML.extract_value(colway,"name","<string>","</string>")
@@ -196,18 +188,23 @@ class AVAXML:
             return colourways
 
     def create_AVA_colourway_file(*colourways, name):
-        global G_output_dir
+        global G_output_dir, G_loaded_UUID
         header = '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>AVA_Colourway_Info</key><string>2.0</string><key>colourways</key><array>'
-        footer = '</array><key>docInfo</key><dict><key>doc-UUID</key><string>432E04AE-2159-4EFF-BB38-B790F53B6FCF</string></dict></dict></plist>'
+        footer = '</array><key>docInfo</key><dict><key>doc-UUID</key><string>'+G_loaded_UUID+'</string></dict></dict></plist>'
         current_text = header
         cways = colourways[0]
+        count = 1
         for each in cways:
-            current_text += AVAXML.format_xml_colourway_string(each)
+            current_text += AVAXML.format_xml_colourway_string(each, count)
+            count += 1
         current_text += footer
+        G_loaded_UUID = ""
         with open(G_output_dir+"/"+name, "w") as text_file:
             text_file.write(current_text)
 
-    def format_xml_colourway_string(colway):
+    def format_xml_colourway_string(colway,count):
+        if colway.name == "":
+            colway.name = str(count)+'.'
         format = "<dict><key>layers</key><array>\n"
         for each in colway.get_colours():
             if each.values['ref'] == "":
@@ -238,15 +235,37 @@ class AVADiffs:
             delta_e_list = []
             for line in remove_footer:
                 cells = line.split(",")
-                new_sample = AVAColour(name=cells[0],lab=(float(cells[1]),float(cells[2]),float(cells[3])))
-                new_master = AVAColour(name=cells[4],lab=(float(cells[5]),float(cells[6]),float(cells[7])))
+                new_sample = AVAColour(name=cells[0],lab=(float(cells[1]),float(cells[2]),float(cells[3])),diff=True)
+                new_master = AVAColour(name=cells[4],lab=(float(cells[5]),float(cells[6]),float(cells[7])),diff=True)
                 delta_e_list.append(get_delta_e(new_master.values['lab'],new_sample.values['lab']))
                 cols.append(new_sample)
                 cols.append(new_master)
             print(delta_e_list)
             
         return (cols,delta_e_list)
-                
+
+def labtorgb(lab):
+    temp = color.lab2rgb(lab)
+    print(str(lab) +": LAB 2 RGB:", int(temp[0]*65536),int(temp[1]*65536), int(temp[2]*65536))
+    return [int(temp[0]*65536),int(temp[1]*65536), int(temp[2]*65536)]
+
+def labtoxyz(lab):
+    temp = color.lab2xyz(lab)
+    multiplied = [float(temp[0])*100,float(temp[1])*100,float(temp[2])*100]
+    clamped = []
+    for i in range(3):
+        if multiplied[i] >= 0.0 and multiplied[i] <= 100.0:
+            clamped.append(multiplied[i])
+        elif multiplied[i] < 0:
+            clamped.append(0.0)
+        elif multiplied[i] > 100.0:
+            clamped.append(100.0)
+    print(str(lab) + ": LAB to XYZ:" + str(clamped))
+    return clamped
+
+def rgb16tosrgb(rgb16):
+    return (float(rgb16[0])/65536,float(rgb16[1])/65536,float(rgb16[2])/65536)
+
 def lab_to_hex_rgb(lab):
     rgb_color = color.lab2rgb([[lab]], illuminant='D65', observer='2')
     r = round(rgb_color[0,0,0] * 255)
@@ -266,10 +285,12 @@ def get_delta_e(lab1, lab2) -> float:
 class Application(tk.Tk):
     def __init__(self,*args,**kwargs):
         tk.Tk.__init__(self,*args,**kwargs)
+        threading.Thread(target=self.dimension_watcher,daemon=True).start()
         read_settings()
         container = tk.Frame(self,bg=G_background)
         self.attributes("-fullscreen", False)
         #self.wm_attributes('-type', 'splash')
+        self.geometry(None)
         container.pack(side="top",fill="both",expand=True)
         container.grid_rowconfigure(0,weight=1)
         container.grid_columnconfigure(0,weight=1)    
@@ -285,6 +306,17 @@ class Application(tk.Tk):
         self.show_frame(MainScreen)
         self.mainloop()
     
+    def dimension_watcher(self):
+        global G_space_needed
+        space_set = G_space_needed
+        self.geometry("400x45")
+        while True:
+            time.sleep(0.5)
+            if G_space_needed != space_set:
+                self.geometry(str(G_space_needed[0])+"x"+str(G_space_needed[1]))
+                space_set = G_space_needed
+                print("Changed Dimensions to " + str(space_set[0]) + "x" + str(space_set[1]))
+    
     def show_frame(self,cont):
         frame = self.frames[cont]
         frame.on_raise()
@@ -295,16 +327,17 @@ class Application(tk.Tk):
         if string == "":
             return
         else:
-            self.colourways = AVAXML.extract_colourways_from_xml(string)
+            self.colourways = AVAXML.extract_colourways_from_xml(G_colourway_dir+"/"+string)
         self.show_frame(ColourScreen)
         self.frames[ColourScreen].display_colourways(self.colourways)
     
     def save_colourway_pressed(self):
         global G_diff_dir, G_colourway_dir
         current_diff_file = self.frames[ColourScreen].diff_entry.get()
-        if os.path.exists(G_diff_dir+"/"+current_diff_file):
+        if os.path.exists(G_diff_dir+"/"+current_diff_file) and current_diff_file != "":
+            print("Attemping to remove", G_diff_dir+"/"+current_diff_file)
             os.remove(G_diff_dir+"/"+current_diff_file)
-        AVAXML.create_AVA_colourway_file(self.colourways,name=self.frames[MainScreen].load_entry.get()+"_OUT")
+        AVAXML.create_AVA_colourway_file(self.colourways,name=self.frames[MainScreen].load_entry.get())
         current_cway_file = self.frames[MainScreen].load_entry.get()
         if os.path.exists(G_colourway_dir+"/"+current_cway_file):
             os.remove(G_colourway_dir+"/"+current_cway_file)
@@ -399,7 +432,7 @@ class Application(tk.Tk):
                 newcol[2] = 127
             if newcol[2] < -128:
                 newcol[2] = -128
-            self.colourways[index-1].get_colours()[i].set("lab",newcol)
+            self.colourways[index-1].get_colours()[i].changelab(newcol)
             self.frames[ColourScreen].display_colourways(self.colourways,retain=True)
 
 class MainScreen(tk.Frame):
@@ -411,8 +444,11 @@ class MainScreen(tk.Frame):
         self.load_entry = tk.Entry(self,bg=G_entry_background,fg=G_text_colour)
         self.load_entry.grid(row=0,column=0)
         load_button.grid(row=0,column=1)
+        self.cont = controller
 
     def on_raise(self):
+        global G_space_needed
+        G_space_needed = [400,45]
         threading.Thread(target=self.colourway_watcher,daemon=True).start()
 
     def colourway_watcher(self):
@@ -427,6 +463,7 @@ class MainScreen(tk.Frame):
                     self.load_entry.delete(0,tk.END)
                     self.load_entry.insert(0,each)
                     print("File Found: " + each)
+                    Application.load_colourway_pressed(self.cont)
                     return
             self.load_entry.delete(0,tk.END)
 
@@ -439,6 +476,7 @@ class ColourScreen(tk.Frame):
         self.boxes = []
         self.diffs = []
         self.deltaE = tk.StringVar()
+        self.cont = controller
 
         self.diff_entry = tk.Entry(self,bg=G_entry_background,fg=G_text_colour)
         self.diff_entry.grid(row=0,column=2)
@@ -455,6 +493,7 @@ class ColourScreen(tk.Frame):
         self.diff_num_added_entry = tk.Entry(self,bg=G_entry_background,fg=G_text_colour)
         self.diff_num_added_entry.grid(row=0,column=5)
         self.diff_num_added_entry.config(width=5)
+        self.diff_num_added_entry.insert(0,"4")
         self.deltaE_label = tk.Label(self, text="ΔE",bg=G_background,fg=G_background)
         self.deltaE_label.grid(row=0,column=7)
         self.deltaE_display = tk.Label(self,textvariable=self.deltaE,bg=G_background,fg=G_text_colour)
@@ -468,6 +507,9 @@ class ColourScreen(tk.Frame):
     def diff_watcher(self):
         global G_diff_dir
         print("Diff Watcher Started")
+        self.diff_load_button.config(state='disabled',background=G_inactive_btn_col)
+        self.diff_multi_add_button.config(state='disabled',background=G_inactive_btn_col)
+        self.diff_apply_button.config(state='disabled',background=G_inactive_btn_col)
         while True:
             time.sleep(0.5)
             files = os.listdir(G_diff_dir)
@@ -476,6 +518,7 @@ class ColourScreen(tk.Frame):
                 self.diff_entry.delete(0,tk.END)
                 self.diff_entry.insert(0,each)
                 self.diff_load_button.config(state='normal',bg=G_active_btn_col)
+                Application.load_diffs_pressed(self.cont)
                 return
             self.diff_entry.delete(0,tk.END)
 
@@ -487,6 +530,7 @@ class ColourScreen(tk.Frame):
             self.stored_cways = []
 
     def display_colourways(self,colways,retain=False):
+        global G_space_needed
         self.clear_colourway_display()
         if len(self.stored_cways) != 0:
             return
@@ -499,6 +543,7 @@ class ColourScreen(tk.Frame):
             cols = self.stored_cways[i].get_colours()
             for j in range(len(cols)):
                 col_numbs.append(str(j+1)+". "+cols[j].name)
+        G_space_needed = [820,30+(24*len(self.stored_cways[0].get_colours()))]
         colourway_selector = ttk.Combobox(self,textvariable=self.selected_cway,values=cway_numbs,background=G_entry_background,foreground=G_text_colour)
         colourway_selector.grid(row=0,column=0)
         #if self.selected_cway.get() == "":
@@ -552,11 +597,11 @@ class ColourScreen(tk.Frame):
             cname = ttk.Label(self,text=colour.name,background=G_background,foreground=G_text_colour)
             cname.grid(row=crow,column=0)
             lab = colour.values['lab']
-            c_l = ttk.Label(self,text=round(lab[0],2),foreground=G_text_colour)
+            c_l = ttk.Label(self,text=round(lab[0],2),foreground=G_text_colour,background=G_background)
             c_l.grid(row=crow,column=1,padx=2)
-            c_a = ttk.Label(self,text=round(lab[1],2),foreground=G_text_colour)
+            c_a = ttk.Label(self,text=round(lab[1],2),foreground=G_text_colour,background=G_background)
             c_a.grid(row=crow,column=2,padx=2)
-            c_b = ttk.Label(self,text=round(lab[2],2),foreground=G_text_colour)
+            c_b = ttk.Label(self,text=round(lab[2],2),foreground=G_text_colour,background=G_background)
             c_b.grid(row=crow,column=3,padx=2)
             for each in [c_l,c_a,c_b]:
                 each.config(width=10,background=G_background)
@@ -565,6 +610,5 @@ class ColourScreen(tk.Frame):
             c_display.grid(row=crow,column=4)
             self.boxes.append((cname,c_l,c_a,c_b,c_display))
             crow += 1
-
 
 Application()
