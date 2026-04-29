@@ -596,12 +596,13 @@ class ColourScreen(tk.Frame):
             files = os.listdir(G_diff_dir)
             files = [f for f in files if os.path.isfile(G_diff_dir+"/"+f)]
             for each in files:
-                time.sleep(1)
-                self.diff_entry.delete(0,tk.END)
-                self.diff_entry.insert(0,each)
-                self.diff_load_button.config(state='normal',bg=G_active_btn_col)
-                Application.load_diffs_pressed(self.cont)
-                return
+                if each[0] != ".":
+                    time.sleep(1)
+                    self.diff_entry.delete(0,tk.END)
+                    self.diff_entry.insert(0,each)
+                    self.diff_load_button.config(state='normal',bg=G_active_btn_col)
+                    Application.load_diffs_pressed(self.cont)
+                    return
             self.diff_entry.delete(0,tk.END)
 
     def toggle_layer(self,index=0, cway=0):
@@ -703,7 +704,7 @@ class ColourScreen(tk.Frame):
         index = cway_number.split('.')
         crow = 1
         for colour in self.stored_cways[int(index[0])-1].get_colours():
-            cname = ttk.Label(self,text=colour.name,background=G_background,foreground=G_text_colour)
+            cname = tk.Button(self,text=colour.name,background=G_background,foreground=G_text_colour, command=partial(ColourScreen.toggle_layer,self,index=crow-1,cway=cway_number),width=15,height=1)
             cname.grid(row=crow,column=0)
             lab = colour.values['lab']
             c_l = ttk.Label(self,text=round(lab[0],2),foreground=G_text_colour,background=G_background)
@@ -712,17 +713,17 @@ class ColourScreen(tk.Frame):
             c_a.grid(row=crow,column=2,padx=2)
             c_b = ttk.Label(self,text=round(lab[2],2),foreground=G_text_colour,background=G_background)
             c_b.grid(row=crow,column=3,padx=2)
-            for each in [cname,c_l,c_a,c_b]:
+            for each in [c_l,c_a,c_b]:
                 each.config(width=10,background=G_background)
-            c_display = tk.Button(self,bg=G_background,command=partial(ColourScreen.toggle_layer,self,index=crow-1,cway=cway_number))
+            c_display = tk.Label(self,bg=G_background)
             c_display.config(bg=(lab_to_hex_rgb((lab[0],lab[1],lab[2]))),width=10)
             c_display.grid(row=crow,column=4)
             if G_layers_enabled[crow-1] == False:
-                for each in [cname,c_l,c_a,c_b]:
+                for each in [c_l,c_a,c_b]:
                     each.config(foreground=G_disabled_layer_bkg)
                 c_display.config(background=G_disabled_layer_bkg)
             if G_layers_enabled[crow-1] == True:
-                for each in [cname,c_l,c_a,c_b]:
+                for each in [c_l,c_a,c_b]:
                     each.config(foreground=G_enabled_layer_bkg)
             self.boxes.append((cname,c_l,c_a,c_b,c_display))
             crow += 1
