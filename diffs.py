@@ -8,6 +8,7 @@ import time
 import statistics
 import random
 import string
+from functools import partial
 
 
 SAVE_ONLY_MODIFIED_COLOURWAYS = True
@@ -24,7 +25,10 @@ G_entry_background = ""
 G_text_colour = ""
 G_active_btn_col = ""
 G_inactive_btn_col = ""
+G_enabled_layer_bkg = ""
+G_disabled_layer_bkg = ""
 
+G_layers_enabled = {}
 G_loaded_UUID = ""
 G_colour_uuids = []
 G_space_needed = [400,45]
@@ -33,7 +37,7 @@ G_num_of_colourways_loaded = 0
 CWAY_HEADER = "<dict><key>additionalInfo</key><dict/><key>colourwaySettings</key><dict/><key>layers</key><array>"
 
 def read_settings():
-    global G_colourway_dir,G_diff_dir,G_output_dir,G_background,G_text_colour, G_active_btn_col, G_inactive_btn_col, G_entry_background
+    global G_colourway_dir,G_diff_dir,G_output_dir,G_background,G_text_colour, G_active_btn_col, G_inactive_btn_col, G_entry_background, G_enabled_layer_bkg, G_disabled_layer_bkg
     with open("settings.txt","r") as file:
         raw_file = file.read()
         lines = raw_file.split("\n")
@@ -45,6 +49,8 @@ def read_settings():
         G_active_btn_col = lines[5].split("=")[0]
         G_inactive_btn_col = lines[6].split("=")[0]
         G_entry_background = lines[7].split("=")[0]
+        G_disabled_layer_bkg = lines[8].split("=")[0]
+        G_enabled_layer_bkg = lines[9].split("=")[0]
 
 class AVAColourway:
     """A Colourway holding a list of colours, along with a name and locked status"""
@@ -184,13 +190,15 @@ class AVAXML:
         
     
     def extract_colourways_from_xml(filename):
-        global G_loaded_UUID, G_num_of_colourways_loaded, G_colour_uuids
+        global G_loaded_UUID, G_num_of_colourways_loaded, G_colour_uuids, G_layers_enabled
         colourways = []
+        G_layers_enabled = {}
         with open(filename, 'r') as file:
             header = '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>AVA_Colourway_Info</key><string>2.0</string><key>colourways</key><array>'
             raw_file = file.read().replace("\n", "").replace("\t","") # removed spaces and linebreaks
             footer = raw_file[-126:]
             print(footer)
+            num_of_layers = 0
             G_loaded_UUID = AVAXML.extract_value(footer,"doc-UUID")
             removed_header = raw_file.replace(header,"").replace(footer,"") #file with removed header + footer
             stripped_colourways = removed_header.split(CWAY_HEADER)
@@ -202,6 +210,7 @@ class AVAXML:
                     cway_uuid = AVAXML.extract_value(colway[-100:],"uuid")
                     colours = []
                     test = colway.split("<dict><key>colour</key><string>")
+                    num_of_layers = len(test)-1
                     for each in test:
                         if each:
                             #print(each)
@@ -210,7 +219,6 @@ class AVAXML:
                             cname = coldata[0]
                             cuuid = AVAXML.extract_value(removed_cmyk,"uuid","<string>","</string>")
                             csrgb = AVAXML.extract_value(removed_cmyk,"sRGB")
-                            print(csrgb)
                             if cuuid not in G_colour_uuids:
                                 G_colour_uuids.append(cuuid)
                             splitrgb = coldata[1].split(",")
@@ -234,6 +242,9 @@ class AVAXML:
                     new = AVAColourway(colours, name=cway_name,locked=cway_locked,uuid=cway_uuid)
                     G_num_of_colourways_loaded += 1
                     colourways.append(new)
+            for i in range(num_of_layers):
+                G_layers_enabled[i] = True
+            print(G_layers_enabled)
             return colourways
 
     def create_AVA_colourway_file(*colourways, name):
@@ -390,6 +401,7 @@ class Application(tk.Tk):
         frame = self.frames[cont]
         frame.on_raise()
         frame.tkraise()
+
 
     def load_colourway_pressed(self):
         string = self.frames[MainScreen].load_entry.get()
@@ -583,12 +595,25 @@ class ColourScreen(tk.Frame):
             files = os.listdir(G_diff_dir)
             files = [f for f in files if os.path.isfile(G_diff_dir+"/"+f)]
             for each in files:
+                time.sleep(1)
                 self.diff_entry.delete(0,tk.END)
                 self.diff_entry.insert(0,each)
                 self.diff_load_button.config(state='normal',bg=G_active_btn_col)
                 Application.load_diffs_pressed(self.cont)
                 return
             self.diff_entry.delete(0,tk.END)
+
+    def toggle_layer(self,index=0, cway=0):
+        global G_layers_enabled
+        print("LAYER TOGGLED",index)
+        if G_layers_enabled[index] == True:
+            print("Now OFF")
+            G_layers_enabled[index] = False
+        else:
+            print("Now ON")
+            G_layers_enabled[index] = True
+        self.select_cway(cway)
+        
 
     def cway_selected(self,event):
         self.select_cway(self.selected_cway.get())
@@ -611,7 +636,7 @@ class ColourScreen(tk.Frame):
             cols = self.stored_cways[i].get_colours()
             for j in range(len(cols)):
                 col_numbs.append(str(j+1)+". "+cols[j].name)
-        G_space_needed = [820,30+(24*len(self.stored_cways[0].get_colours()))]
+        G_space_needed = [820,33+(33*len(self.stored_cways[0].get_colours()))]
         colourway_selector = ttk.Combobox(self,textvariable=self.selected_cway,values=cway_numbs,background=G_entry_background,foreground=G_text_colour)
         colourway_selector.grid(row=0,column=0)
         #if self.selected_cway.get() == "":
@@ -631,6 +656,7 @@ class ColourScreen(tk.Frame):
         self.deltaE_label.config(fg=G_background)
     
     def display_diffs(self,diffs):
+        global G_layers_enabled
         rows = 1
         self.diff_multi_add_button.config(state='normal',bg=G_active_btn_col)
         self.diff_apply_button.config(state='normal',bg=G_active_btn_col)
@@ -639,21 +665,31 @@ class ColourScreen(tk.Frame):
                 for component in diff:
                     component.destroy()
             self.diffs = []
+        self.temp_differences = []
+        samples = []
+        masters = []
+        test_row = 0
         for i in range(0,len(diffs),2):
-            sample = diffs[i]
-            master = diffs[i+1]
-            difference = (master.values['lab'][0] - sample.values['lab'][0],master.values['lab'][1] - sample.values['lab'][1],master.values['lab'][2] - sample.values['lab'][2])
-            d_l = ttk.Label(self,text=round(difference[0],2),background=G_background,foreground=G_text_colour)
+            samples.append(diffs[i])
+            masters.append(diffs[i+1])
+        for i in range(len(G_layers_enabled)):
+            if G_layers_enabled[i] == True:
+                self.temp_differences.append((masters[i+test_row].values['lab'][0] - samples[i+test_row].values['lab'][0],masters[i+test_row].values['lab'][1] - samples[i+test_row].values['lab'][1],masters[i+test_row].values['lab'][2] - samples[i+test_row].values['lab'][2]))
+            else:
+                test_row -= 1
+                self.temp_differences.append((0.00,0.00,0.00))
+        for i in range(0,len(self.temp_differences)):
+            d_l = ttk.Label(self,text=round(self.temp_differences[i][0],2),background=G_background,foreground=G_text_colour)
             d_l.grid(row=rows,column=5)
-            d_a = ttk.Label(self,text=round(difference[1],2),background=G_background,foreground=G_text_colour)
+            d_a = ttk.Label(self,text=round(self.temp_differences[i][1],2),background=G_background,foreground=G_text_colour)
             d_a.grid(row=rows,column=6)
-            d_b = ttk.Label(self,text=round(difference[2],2),background=G_background,foreground=G_text_colour)
+            d_b = ttk.Label(self,text=round(self.temp_differences[i][2],2),background=G_background,foreground=G_text_colour)
             d_b.grid(row=rows,column=7)
             self.diffs.append((d_l,d_a,d_b))
             rows += 1
     
     def select_cway(self, cway_number):
-        global G_background
+        global G_background, G_layers_enabled, G_enabled_layer_bkg, G_disabled_layer_bkg
         print("cway_number", cway_number)
         if len(self.boxes) > 0:
             for row in self.boxes:
@@ -673,10 +709,20 @@ class ColourScreen(tk.Frame):
             c_b.grid(row=crow,column=3,padx=2)
             for each in [cname,c_l,c_a,c_b]:
                 each.config(width=10,background=G_background)
-            c_display = tk.Label(self,bg=G_background)
+            c_display = tk.Button(self,bg=G_background,command=partial(ColourScreen.toggle_layer,self,index=crow-1,cway=cway_number))
             c_display.config(bg=(lab_to_hex_rgb((lab[0],lab[1],lab[2]))),width=10)
             c_display.grid(row=crow,column=4)
+            if G_layers_enabled[crow-1] == False:
+                for each in [cname,c_l,c_a,c_b]:
+                    each.config(foreground=G_disabled_layer_bkg)
+                c_display.config(background=G_disabled_layer_bkg)
+            if G_layers_enabled[crow-1] == True:
+                for each in [cname,c_l,c_a,c_b]:
+                    each.config(foreground=G_enabled_layer_bkg)
             self.boxes.append((cname,c_l,c_a,c_b,c_display))
             crow += 1
+        if len(self.diffs) > 0:
+            Application.load_diffs_pressed(self.cont)
+            
 
 Application()
