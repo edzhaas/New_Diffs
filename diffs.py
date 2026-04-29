@@ -638,8 +638,8 @@ class ColourScreen(tk.Frame):
             cols = self.stored_cways[i].get_colours()
             for j in range(len(cols)):
                 col_numbs.append(str(j+1)+". "+cols[j].name)
-        G_space_needed = [820,33+(33*len(self.stored_cways[0].get_colours()))]
-        colourway_selector = ttk.Combobox(self,textvariable=self.selected_cway,values=cway_numbs,background=G_entry_background,foreground=G_text_colour)
+        G_space_needed = [720,33+(33*len(self.stored_cways[0].get_colours()))]
+        colourway_selector = ttk.Combobox(self,textvariable=self.selected_cway,values=cway_numbs,background=G_entry_background,foreground=G_text_colour,width=10)
         colourway_selector.grid(row=0,column=0)
         #if self.selected_cway.get() == "":
         if retain == False:
@@ -704,7 +704,7 @@ class ColourScreen(tk.Frame):
         index = cway_number.split('.')
         crow = 1
         for colour in self.stored_cways[int(index[0])-1].get_colours():
-            cname = tk.Button(self,text=colour.name,background=G_background,foreground=G_text_colour, command=partial(ColourScreen.toggle_layer,self,index=crow-1,cway=cway_number),width=15,height=1)
+            cname = tk.Button(self,text=colour.name,background=G_background,foreground=G_text_colour, command=partial(ColourScreen.toggle_layer,self,index=crow-1,cway=cway_number),width=10,height=1)
             cname.grid(row=crow,column=0)
             lab = colour.values['lab']
             c_l = ttk.Label(self,text=round(lab[0],2),foreground=G_text_colour,background=G_background)
