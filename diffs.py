@@ -322,6 +322,7 @@ class AVADiffs:
                 cols.append(new_sample)
                 cols.append(new_master)
             print(delta_e_list)
+        print(len(cols))
         return (cols,delta_e_list)
 
 def labtorgb(lab):
@@ -672,6 +673,10 @@ class ColourScreen(tk.Frame):
         for i in range(0,len(diffs),2):
             samples.append(diffs[i])
             masters.append(diffs[i+1])
+        blankcol = AVAColour(name="",lab=(0,0,0),diff=True)
+        while len(masters) < len(G_layers_enabled):
+            masters.append(blankcol)
+            samples.append(blankcol)
         for i in range(len(G_layers_enabled)):
             if G_layers_enabled[i] == True:
                 self.temp_differences.append((masters[i+test_row].values['lab'][0] - samples[i+test_row].values['lab'][0],masters[i+test_row].values['lab'][1] - samples[i+test_row].values['lab'][1],masters[i+test_row].values['lab'][2] - samples[i+test_row].values['lab'][2]))
