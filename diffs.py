@@ -638,7 +638,7 @@ class ColourScreen(tk.Frame):
             cols = self.stored_cways[i].get_colours()
             for j in range(len(cols)):
                 col_numbs.append(str(j+1)+". "+cols[j].name)
-        G_space_needed = [720,33+(33*len(self.stored_cways[0].get_colours()))]
+        G_space_needed = [730,33+(33*len(self.stored_cways[0].get_colours()))]
         colourway_selector = ttk.Combobox(self,textvariable=self.selected_cway,values=cway_numbs,background=G_entry_background,foreground=G_text_colour,width=10)
         colourway_selector.grid(row=0,column=0)
         #if self.selected_cway.get() == "":
@@ -674,7 +674,7 @@ class ColourScreen(tk.Frame):
         for i in range(0,len(diffs),2):
             samples.append(diffs[i])
             masters.append(diffs[i+1])
-        blankcol = AVAColour(name="",lab=(0,0,0),diff=True)
+        blankcol = AVAColour(name="",lab=(0.0,0.0,0.0),diff=True)
         while len(masters) < len(G_layers_enabled):
             masters.append(blankcol)
             samples.append(blankcol)
@@ -683,7 +683,7 @@ class ColourScreen(tk.Frame):
                 self.temp_differences.append((masters[i+test_row].values['lab'][0] - samples[i+test_row].values['lab'][0],masters[i+test_row].values['lab'][1] - samples[i+test_row].values['lab'][1],masters[i+test_row].values['lab'][2] - samples[i+test_row].values['lab'][2]))
             else:
                 test_row -= 1
-                self.temp_differences.append((0.00,0.00,0.00))
+                self.temp_differences.append((0.0,0.0,0.0))
         for i in range(0,len(self.temp_differences)):
             d_l = ttk.Label(self,text=round(self.temp_differences[i][0],2),background=G_background,foreground=G_text_colour)
             d_l.grid(row=rows,column=5)
