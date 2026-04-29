@@ -30,6 +30,8 @@ G_colour_uuids = []
 G_space_needed = [400,45]
 G_num_of_colourways_loaded = 0
 
+CWAY_HEADER = "<dict><key>additionalInfo</key><dict/><key>colourwaySettings</key><dict/><key>layers</key><array>"
+
 def read_settings():
     global G_colourway_dir,G_diff_dir,G_output_dir,G_background,G_text_colour, G_active_btn_col, G_inactive_btn_col, G_entry_background
     with open("settings.txt","r") as file:
@@ -46,7 +48,7 @@ def read_settings():
 
 class AVAColourway:
     """A Colourway holding a list of colours, along with a name and locked status"""
-    def __init__(self, *colours, name="", locked="false", modified=False):
+    def __init__(self, *colours, name="", locked="false", uuid="", modified=False):
         """
         Create AVAColourway object\n
         Args:\n
@@ -59,6 +61,7 @@ class AVAColourway:
         self.name = name
         self.locked = locked
         self.has_been_modified = modified
+        self.uuid = uuid
         self.colours = []
         if colours:
             self.colours = colours[0]
@@ -80,7 +83,7 @@ class AVAColourway:
             each.print()
 
 class AVAColour:
-    def __init__(self, name="", rgb=None, xyz="", ref="", lab=None, uuid="",diff=False):
+    def __init__(self, name="", rgb=None, xyz="", ref="", lab=None, uuid="",diff=False,type=0):
         self.name = name
         self.uuid = uuid
         self.values = {}
@@ -88,10 +91,12 @@ class AVAColour:
         self.xyz_found = 0
         self.lab_found = 0
         self.rgb_found = 0
+        self.srgb = ""
+        self.type = type
         ## RGB Format (integers 0-65535, 0-65535, 0-65535)
         ## XYZ Format (floats 0-100, 0-100, 0-100)
         
-        if rgb:
+        if rgb and rgb !="0,0,0":
             self.rgb_found = 1
             self.values['rgb']=rgb
            # print("RGB Found: " + str(self.values['rgb']))
@@ -185,22 +190,27 @@ class AVAXML:
             header = '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>AVA_Colourway_Info</key><string>2.0</string><key>colourways</key><array>'
             raw_file = file.read().replace("\n", "").replace("\t","") # removed spaces and linebreaks
             footer = raw_file[-126:]
+            print(footer)
             G_loaded_UUID = AVAXML.extract_value(footer,"doc-UUID")
             removed_header = raw_file.replace(header,"").replace(footer,"") #file with removed header + footer
-            stripped_colourways = removed_header.split("<dict><key>layers</key><array>")
+            stripped_colourways = removed_header.split(CWAY_HEADER)
             G_num_of_colourways_loaded = 0
             for colway in stripped_colourways:
                 if colway:
                     cway_name = AVAXML.extract_value(colway,"name","<string>","</string>")
                     cway_locked = AVAXML.extract_value(colway,"locked","<","/>")
+                    cway_uuid = AVAXML.extract_value(colway[-100:],"uuid")
                     colours = []
                     test = colway.split("<dict><key>colour</key><string>")
                     for each in test:
                         if each:
+                            #print(each)
                             removed_cmyk = AVAXML.remove_cmyk(each)
                             coldata = AVAXML.get_colourdata_from_line(removed_cmyk)
                             cname = coldata[0]
                             cuuid = AVAXML.extract_value(removed_cmyk,"uuid","<string>","</string>")
+                            csrgb = AVAXML.extract_value(removed_cmyk,"sRGB")
+                            print(csrgb)
                             if cuuid not in G_colour_uuids:
                                 G_colour_uuids.append(cuuid)
                             splitrgb = coldata[1].split(",")
@@ -221,10 +231,9 @@ class AVAXML:
                                 tempref = ""
                             new = AVAColour(name=cname,rgb=temprgb,uuid=cuuid, xyz=tempxyz, ref=tempref)
                             colours.append(new)
-                    new = AVAColourway(colours, name=cway_name,locked=cway_locked)
+                    new = AVAColourway(colours, name=cway_name,locked=cway_locked,uuid=cway_uuid)
                     G_num_of_colourways_loaded += 1
                     colourways.append(new)
-            print(G_colour_uuids)
             return colourways
 
     def create_AVA_colourway_file(*colourways, name):
@@ -256,8 +265,10 @@ class AVAXML:
         return random_string # 8 - 4 - 4 - 4 - 12
 
     def format_xml_colourway_string(colway):
-        format = "\t\t<dict>\n\t\t\t<key>layers</key>\n\t\t\t<array>\n"
+        format = "\t\t<dict>\n\t\t\t<key>additionalInfo</key>\n\t\t\t<dict/>\n\t\t\t<key>colourwaySettings</key>\n\t\t\t<dict/>\n\t\t\t<key>layers</key>\n\t\t\t<array>\n"
         count = 0
+        if colway.uuid == "":
+            colway.uuid = AVAXML.generate_uuid()
         for each in colway.get_colours():
             if each.values['ref'] == "":
                 ref = ""
@@ -272,14 +283,14 @@ class AVAXML:
             "\trgb:" + str(each.values['rgb'][0]) + "," + str(each.values['rgb'][1]) + "," + str(each.values['rgb'][2]) + \
             "\txyz:" + str(each.values['xyz'][0]) + "," + str(each.values['xyz'][1]) + "," + str(each.values['xyz'][2]) + \
             "\tref:" + ref + \
-            "\tcfu:1\n</string>\n\t\t\t\t\t<key>uuid</key>\n\t\t\t\t\t<string>" + \
+            "\tcfu:1\n</string>\n\t\t\t\t\t<key>sRGB</key>\n\t\t\t\t\t<string>"+each.srgb+"</string>\n\t\t\t\t\t<key>type</key>\n\t\t\t\t\t<integer>"+str(each.type)+"</integer>\n\t\t\t\t\t<key>uuid</key>\n\t\t\t\t\t<string>" + \
             each.uuid + "</string>\n\t\t\t\t</dict>\n"
             format += new
             count += 1
         #if colway.name == "":
         #    random_string = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
         #    colway.name = random_string
-        format += "\t\t\t</array>\n\t\t\t<key>locked</key>\n\t\t\t<" + colway.locked + "/>\n\t\t\t<key>name</key>\n\t\t\t<string>" + colway.name + "</string>\n\t\t</dict>\n"
+        format += "\t\t\t</array>\n\t\t\t<key>locked</key>\n\t\t\t<" + colway.locked + "/>\n\t\t\t<key>name</key>\n\t\t\t<string>" + colway.name + "</string>\n\t\t<key>uuid</key>\n\t\t<string>" + colway.uuid + "</string>\n\t\t</dict>\n"
         return format
 
 class AVADiffs:
@@ -289,7 +300,7 @@ class AVADiffs:
         with open(G_diff_dir+"/"+filename, 'r') as file:
             raw_read = file.read().replace("\t",",")
             lines = raw_read.split("\n")
-            remove_header = lines[2:]
+            remove_header = lines[5:]
             remove_footer = remove_header[:-5]
             delta_e_list = []
             for line in remove_footer:
@@ -488,8 +499,9 @@ class Application(tk.Tk):
             if newcol[2] < -128:
                 newcol[2] = -128
             self.colourways[index-1].get_colours()[i].changelab(newcol)
-            self.colourways[index-1].has_been_modified = True
-            self.frames[ColourScreen].display_colourways(self.colourways,retain=True)
+        self.colourways[index-1].has_been_modified = True
+        self.colourways[index-1].name = str(index) + ". modified "
+        self.frames[ColourScreen].display_colourways(self.colourways,retain=True)
 
 class MainScreen(tk.Frame):
     def __init__(self,parent,controller):
