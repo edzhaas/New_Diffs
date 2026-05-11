@@ -1,4 +1,5 @@
 import os
+import io
 import tkinter as tk
 from tkinter import ttk
 import threading
@@ -6,6 +7,7 @@ import math
 from skimage import color
 import time
 import statistics
+import subprocess
 import random
 import string
 from functools import partial
@@ -28,6 +30,11 @@ G_inactive_btn_col = ""
 G_enabled_layer_bkg = ""
 G_disabled_layer_bkg = ""
 
+G_scan_complete = False
+G_ready_to_scan = False
+G_scanned_colours = 0
+G_scanmode = False
+G_scanned = False
 G_layers_enabled = {}
 G_loaded_UUID = ""
 G_colour_uuids = []
@@ -306,23 +313,76 @@ class AVAXML:
 
 class AVADiffs:
     def load_diffs(filename):  # Returns a tuple containing master and sample colours (Sample1, Master1, S2, M2 ....)
-        global G_diff_dir
+        global G_diff_dir, G_scanmode, G_scanned, G_scanned_colours, G_ready_to_scan, G_scan_complete
         cols = []
-        with open(G_diff_dir+"/"+filename, 'r') as file:
-            raw_read = file.read().replace("\t",",")
+        if G_scanmode == False and G_scanned == False:
+            with open(G_diff_dir+"/"+filename, 'r') as file:
+                raw_read = file.read().replace("\t",",")
+                lines = raw_read.split("\n")
+                remove_header = lines[5:]
+                remove_footer = remove_header[:-5]
+                delta_e_list = []
+                for line in remove_footer:
+                    cells = line.split(",")
+                    new_sample = AVAColour(name=cells[0],lab=(float(cells[1]),float(cells[2]),float(cells[3])),diff=True)
+                    new_master = AVAColour(name=cells[4],lab=(float(cells[5]),float(cells[6]),float(cells[7])),diff=True)
+                    delta_e_list.append(get_delta_e(new_master.values['lab'],new_sample.values['lab']))
+                    cols.append(new_sample)
+                    cols.append(new_master)
+                print(delta_e_list)
+            print(len(cols))
+            return (cols,delta_e_list)
+        if G_scanned == False:
+            G_ready_to_scan = False
+            G_scan_complete = False
+            #AVADiffs.start_scan_process()
+            logfile = "test.log"
+            log_header = "Reading	X	Y	Z	L*	a*	b*\n"
+            command = ['spotread','-N','readings.txt']
+            G_scanned_colours = 0
+            subprocess.run(['spotread','-O'])
+            with open(logfile,"w") as inputfile:
+                process = subprocess.Popen(command,stdout=subprocess.PIPE)
+                feed = log_header
+                while True:
+                    if G_scanmode == True:
+                        output = process.stdout.read1().decode()
+                        if "XYZ" in output:
+                            if G_scanmode == True:
+                                test = output.strip("\n").strip("\t").strip(",").split("Place")
+                                G_scanned_colours += 1
+                                components = test[0].strip(",").split(" ")
+                                print("Colour Found")
+                                feed += str(G_scanned_colours) + "\t" + components[4] + "\t" + components[5] + "\t" + components[6][:-1] + "\t" + components[9] + "\t" + components[10] + "\t" + components[11][:-2] + "\n"
+                        elif "reading:" in output:
+                            print("Ready to Scan")
+                            G_ready_to_scan = True
+                    if G_scanmode == False:
+                        print("Scanning over")
+                        process.terminate()
+                        break
+                inputfile.write(feed)
+            G_scanned = True
+            #G_scanmode = True
+        delta_e_list = []
+        with open("test.log",'r') as file:
+            raw_read = file.read()
             lines = raw_read.split("\n")
-            remove_header = lines[5:]
-            remove_footer = remove_header[:-5]
-            delta_e_list = []
-            for line in remove_footer:
-                cells = line.split(",")
-                new_sample = AVAColour(name=cells[0],lab=(float(cells[1]),float(cells[2]),float(cells[3])),diff=True)
-                new_master = AVAColour(name=cells[4],lab=(float(cells[5]),float(cells[6]),float(cells[7])),diff=True)
-                delta_e_list.append(get_delta_e(new_master.values['lab'],new_sample.values['lab']))
-                cols.append(new_sample)
-                cols.append(new_master)
-            print(delta_e_list)
-        print(len(cols))
+            data = lines[1:]
+            cols = []
+            inputcols = []
+            for each in data:
+                if each:
+                    print("EACH:", each)
+                    values = each.split("\t")
+                    inputcols.append(AVAColour(name="",lab=(float(values[4]),float(values[5]),float(values[6])),diff=True))
+            print(len(inputcols))
+            num_of_pairs = int(len(inputcols)/2)
+            print("PAIRS", num_of_pairs)
+            for i in range(num_of_pairs):
+                delta_e_list.append(get_delta_e(inputcols[i].values['lab'],inputcols[i+num_of_pairs].values['lab']))
+                cols.append(inputcols[i])
+                cols.append(inputcols[i+num_of_pairs])
         return (cols,delta_e_list)
 
 def labtorgb(lab):
@@ -414,7 +474,14 @@ class Application(tk.Tk):
         self.frames[ColourScreen].display_colourways(self.colourways)
 
     def save_colourway_pressed(self):
-        global G_diff_dir, G_colourway_dir
+        global G_diff_dir, G_colourway_dir, G_scanmode, G_scanned, G_scanned_colours, G_ready_to_scan,G_scan_complete
+        if os.path.exists("test.log"):
+            os.remove("test.log")
+        G_scanmode = False
+        G_scanned = False
+        G_scan_complete = False
+        G_scanned_colours = 0
+        G_ready_to_scan = False
         current_diff_file = self.frames[ColourScreen].diff_entry.get()
         if os.path.exists(G_diff_dir+"/"+current_diff_file) and current_diff_file != "":
             print("Attemping to remove", G_diff_dir+"/"+current_diff_file)
@@ -426,16 +493,42 @@ class Application(tk.Tk):
         ColourScreen.clear_diffs(self.frames[ColourScreen])
         self.show_frame(MainScreen)
 
+    def scan_state_thread(self):
+        global G_scanmode,G_scanned,G_scanned_colours,G_ready_to_scan,G_scan_complete
+        while True:
+            time.sleep(0.25)
+            if G_scan_complete:
+                self.frames[ColourScreen].scan_button.config(text="Finished: " + str(G_scanned_colours))
+            elif G_ready_to_scan and G_scanmode:
+                if G_scanned_colours == 0:
+                    self.frames[ColourScreen].scan_button.config(text="Ready to Scan")
+                elif G_scanned_colours > 0:
+                    self.frames[ColourScreen].scan_button.config(text="Scanned: " + str(G_scanned_colours))
+            elif G_ready_to_scan == False and G_scanmode == False:
+                    self.frames[ColourScreen].scan_button.config(text="Start Scanning")
+            elif G_scanmode == True and G_ready_to_scan == False:
+                    self.frames[ColourScreen].scan_button.config(text="Calibrating")
+                
+                
+
+    def scan_diffs_pressed(self):
+        global G_scanmode, G_scanned, G_scan_complete
+        if G_scanmode == True:
+            G_scanmode = False
+            G_scan_complete = True
+            return
+        G_scanmode = True
+        G_scanned = False
+        threading.Thread(target=self.scan_state_thread,daemon=True).start()
+        threading.Thread(target=self.load_diffs_pressed,daemon=True).start()
+
     def load_diffs_pressed(self):
         global G_text_colour, G_background
         string = self.frames[ColourScreen].diff_entry.get()
-        if string == "":
-            return
-        else:
-            loaded_diffs = AVADiffs.load_diffs(string)
-            self.frames[ColourScreen].deltaE.set(round(statistics.mean(loaded_diffs[1]),2))
-            self.frames[ColourScreen].deltaE_label.config(fg=G_text_colour,bg=G_background)
-            ColourScreen.display_diffs(self.frames[ColourScreen],loaded_diffs[0])
+        loaded_diffs = AVADiffs.load_diffs(string)
+        self.frames[ColourScreen].deltaE.set(round(statistics.mean(loaded_diffs[1]),2))
+        self.frames[ColourScreen].deltaE_label.config(fg=G_text_colour,bg=G_background)
+        ColourScreen.display_diffs(self.frames[ColourScreen],loaded_diffs[0])
 
     def add_multiple_diffs_pressed(self):
         if len(self.frames[ColourScreen].diffs) < 1:
@@ -559,9 +652,10 @@ class ColourScreen(tk.Frame):
         self.deltaE = tk.StringVar()
         self.cont = controller
 
+        self.scan_button = tk.Button(self,text="scan in",command=lambda param=self:Application.scan_diffs_pressed(controller),bg=G_active_btn_col,fg=G_text_colour)
         self.diff_entry = tk.Entry(self,bg=G_entry_background,fg=G_text_colour)
-        self.diff_entry.grid(row=0,column=2)
-        self.diff_entry.config(width=10)
+        self.scan_button.grid(row=0,column=2)
+        self.scan_button.config(width=10)
         self.diff_load_button = tk.Button(self,text="Load Diffs",command=lambda param=self:Application.load_diffs_pressed(controller),bg=G_active_btn_col, fg=G_text_colour)
         self.diff_load_button.grid(row=0,column=1)
         self.diff_load_button.config(state='disabled',bg=G_inactive_btn_col)
@@ -598,11 +692,12 @@ class ColourScreen(tk.Frame):
             for each in files:
                 if each[0] != ".":
                     time.sleep(1)
-                    self.diff_entry.delete(0,tk.END)
-                    self.diff_entry.insert(0,each)
-                    self.diff_load_button.config(state='normal',bg=G_active_btn_col)
-                    Application.load_diffs_pressed(self.cont)
-                    return
+                    if os.path.exists(G_diff_dir+"/"+each):
+                        self.diff_entry.delete(0,tk.END)
+                        self.diff_entry.insert(0,each)
+                        self.diff_load_button.config(state='normal',bg=G_active_btn_col)
+                        Application.load_diffs_pressed(self.cont)
+                        return
             self.diff_entry.delete(0,tk.END)
 
     def toggle_layer(self,index=0, cway=0):
@@ -616,7 +711,6 @@ class ColourScreen(tk.Frame):
             G_layers_enabled[index] = True
         self.select_cway(cway)
         
-
     def cway_selected(self,event):
         self.select_cway(self.selected_cway.get())
 
@@ -691,6 +785,9 @@ class ColourScreen(tk.Frame):
             d_a.grid(row=rows,column=6)
             d_b = ttk.Label(self,text=round(self.temp_differences[i][2],2),background=G_background,foreground=G_text_colour)
             d_b.grid(row=rows,column=7)
+            for each in [d_l,d_a,d_b]:
+                if each.cget("text") == 0.0:
+                    each.config(foreground=G_background)
             self.diffs.append((d_l,d_a,d_b))
             rows += 1
     
@@ -704,7 +801,7 @@ class ColourScreen(tk.Frame):
         index = cway_number.split('.')
         crow = 1
         for colour in self.stored_cways[int(index[0])-1].get_colours():
-            cname = tk.Button(self,text=colour.name,background=G_background,foreground=G_text_colour, command=partial(ColourScreen.toggle_layer,self,index=crow-1,cway=cway_number),width=10,height=1)
+            cname = tk.Button(self,text=str(crow)+"."+colour.name,background=G_background,foreground=G_text_colour, command=partial(ColourScreen.toggle_layer,self,index=crow-1,cway=cway_number),width=10,height=1,justify='left')
             cname.grid(row=crow,column=0)
             lab = colour.values['lab']
             c_l = ttk.Label(self,text=round(lab[0],2),foreground=G_text_colour,background=G_background)
@@ -720,11 +817,11 @@ class ColourScreen(tk.Frame):
             c_display.grid(row=crow,column=4)
             if G_layers_enabled[crow-1] == False:
                 for each in [c_l,c_a,c_b]:
-                    each.config(foreground=G_disabled_layer_bkg)
-                c_display.config(background=G_disabled_layer_bkg)
+                    each.config(foreground=G_background,background=G_background)
+                c_display.config(background=G_background)
             if G_layers_enabled[crow-1] == True:
                 for each in [c_l,c_a,c_b]:
-                    each.config(foreground=G_enabled_layer_bkg)
+                    each.config(foreground=G_enabled_layer_bkg,background=G_background)
             self.boxes.append((cname,c_l,c_a,c_b,c_display))
             crow += 1
         if len(self.diffs) > 0:
