@@ -30,6 +30,7 @@ G_inactive_btn_col = ""
 G_enabled_layer_bkg = ""
 G_disabled_layer_bkg = ""
 
+G_scan_thread_running = False
 G_scan_complete = False
 G_ready_to_scan = False
 G_scanned_colours = 0
@@ -494,7 +495,10 @@ class Application(tk.Tk):
         self.show_frame(MainScreen)
 
     def scan_state_thread(self):
-        global G_scanmode,G_scanned,G_scanned_colours,G_ready_to_scan,G_scan_complete
+        global G_scanmode,G_scanned,G_scanned_colours,G_ready_to_scan,G_scan_complete, G_scan_thread_running
+        if G_scan_thread_running == True:
+            return
+        G_scan_thread_running = True
         while True:
             time.sleep(0.25)
             if G_scan_complete:
