@@ -145,7 +145,7 @@ class AVAColour:
                 
         if self.rgb_found == 0 and diff==False:
             #print("no RGB found")
-            self.values['rgb'] = labtorgb(lab)
+            self.values['rgb'] = labtorgb(self.values['lab'])
             
     def print(self):
         print("Colour Name:", self.name, "LAB:",self.values['lab'],"RGB:", self.values['rgb'])
@@ -176,6 +176,31 @@ class AVAXML:
             temp2 = temp[1].split(end)
             return temp2[0]
 
+    def get_colourdata_from_line_to_dict(line):
+        data = {}
+        cleaned_line = line.split("<")[0]
+        valid_tags = ("rgb","xyz","ref","cmyk","cf","cfu")
+        for each in valid_tags:
+            data[each] = ""
+        divide = cleaned_line.split(":")
+        print("DIVIDE" + str(divide))
+        for i in range(len(divide)):
+            for each in valid_tags:
+                if each in divide[i]:
+                    if each == "cf" and "cfu" in divide[i]:
+                        continue
+                    test = divide[i+1]
+                    for tag in valid_tags:
+                        if tag in divide[i+1]:
+                            test = divide[i+1].replace(tag,"")
+                    print(each + " found value:" + test + "!!!!!")
+                    data[each] = test
+        print(data)
+        return data
+                    
+                    
+                
+
     def get_colourdata_from_line(line):
         name = line.split("rgb:")[0] # gets name
         rgb = AVAXML.get_data_between(line,"rgb:", "xyz:")
@@ -186,15 +211,6 @@ class AVAXML:
             xyz = AVAXML.get_data_between(line,"xyz:","cfu")
             ref = ""
         return (name, rgb, xyz, ref)
-
-    def remove_cmyk(line):
-        if "cmyk:" in line:
-            before = line.split("cmyk:")[0]
-            after = line.split("cfu:1")[1]
-            #print("BEFORE",before,"AFTER", after)
-            return before + "cfu:1" + after
-        else:
-            return line
         
     
     def extract_colourways_from_xml(filename):
@@ -222,27 +238,32 @@ class AVAXML:
                     for each in test:
                         if each:
                             #print(each)
-                            removed_cmyk = AVAXML.remove_cmyk(each)
-                            coldata = AVAXML.get_colourdata_from_line(removed_cmyk)
-                            cname = coldata[0]
-                            cuuid = AVAXML.extract_value(removed_cmyk,"uuid","<string>","</string>")
-                            csrgb = AVAXML.extract_value(removed_cmyk,"sRGB")
+                            coldata = AVAXML.get_colourdata_from_line_to_dict(each)
+                            cname = ""
+                            if coldata["cf"]:
+                                cname = coldata["cf"]
+                            cuuid = AVAXML.extract_value(each,"uuid","<string>","</string>")
+                            csrgb = AVAXML.extract_value(each,"sRGB")
                             if cuuid not in G_colour_uuids:
                                 G_colour_uuids.append(cuuid)
-                            splitrgb = coldata[1].split(",")
-                            splitxyz = coldata[2].split(",")
-                            if len(coldata[3])>0:
-                                splitref = coldata[3].split(",")
-                            else:
-                                splitref = ""
+                            splitrgb = (0,0,0)
                             temprgb = []
+                            if coldata["rgb"]:
+                                splitrgb = coldata["rgb"].split(",")
+                                for i in range(3):
+                                    temprgb.append(int(splitrgb[i]))
+                            splitxyz = (0,0,0)
                             tempxyz = []
+                            if coldata["xyz"]:
+                                splitxyz = coldata["xyz"].split(",")
+                                for i in range(3):
+                                    tempxyz.append(splitxyz[i])
+                            splitref = ""
                             tempref = []
-                            for i in range(3):
-                                temprgb.append(int(splitrgb[i]))
-                                tempxyz.append(splitxyz[i])
-                            for i in range(len(splitref)):
-                                tempref.append(splitref[i])
+                            if coldata["ref"]:
+                                splitref = coldata["ref"].split(",")
+                                for i in range(len(splitref)):
+                                    tempref.append(splitref[i])
                             if splitref == "":
                                 tempref = ""
                             new = AVAColour(name=cname,rgb=temprgb,uuid=cuuid, xyz=tempxyz, ref=tempref)
@@ -298,9 +319,10 @@ class AVAXML:
             if each.uuid == "":
                 each.uuid = G_colour_uuids[count]
             #each.name = AVAXML.generate_uuid()
-            new = "\t\t\t\t<dict>\n\t\t\t\t\t<key>colour</key>\n\t\t\t\t\t<string>" + each.name +  \
-            "\trgb:" + str(each.values['rgb'][0]) + "," + str(each.values['rgb'][1]) + "," + str(each.values['rgb'][2]) + \
-            "\txyz:" + str(each.values['xyz'][0]) + "," + str(each.values['xyz'][1]) + "," + str(each.values['xyz'][2]) + \
+            new = "\t\t\t\t<dict>\n\t\t\t\t\t<key>colour</key>\n\t\t\t\t\t<string>" + each.name
+            if each.values['rgb']:
+                new += "\trgb:" + str(each.values['rgb'][0]) + "," + str(each.values['rgb'][1]) + "," + str(each.values['rgb'][2])
+            new += "\txyz:" + str(each.values['xyz'][0]) + "," + str(each.values['xyz'][1]) + "," + str(each.values['xyz'][2]) + \
             "\tref:" + ref + \
             "\tcfu:1\n</string>\n\t\t\t\t\t<key>sRGB</key>\n\t\t\t\t\t<string>"+each.srgb+"</string>\n\t\t\t\t\t<key>type</key>\n\t\t\t\t\t<integer>"+str(each.type)+"</integer>\n\t\t\t\t\t<key>uuid</key>\n\t\t\t\t\t<string>" + \
             each.uuid + "</string>\n\t\t\t\t</dict>\n"
@@ -513,8 +535,6 @@ class Application(tk.Tk):
             elif G_scanmode == True and G_ready_to_scan == False:
                     self.frames[ColourScreen].scan_button.config(text="Calibrating")
                 
-                
-
     def scan_diffs_pressed(self):
         global G_scanmode, G_scanned, G_scan_complete
         if G_scanmode == True:
@@ -544,8 +564,12 @@ class Application(tk.Tk):
         num_of_new_colways = 4
         if self.frames[ColourScreen].diff_num_added_entry.get():
             num_of_new_colways = int(self.frames[ColourScreen].diff_num_added_entry.get())
+        multipliers = []
+        step = 1 / num_of_new_colways
+        for i in range(num_of_new_colways):
+            multipliers.append(step*(i+1))
         for j in range(num_of_new_colways):
-            multiplier = 1/(j+1)
+            multiplier = multipliers[j]
             newcolourway = AVAColourway()
             for i in range(len(self.colourways[index-1].get_colours())):
                 original = self.colourways[index-1].get_colours()[i]
@@ -759,7 +783,7 @@ class ColourScreen(tk.Frame):
         global G_layers_enabled
         rows = 1
         self.diff_multi_add_button.config(state='normal',bg=G_active_btn_col)
-        self.diff_apply_button.config(state='normal',bg=G_active_btn_col)
+        #self.diff_apply_button.config(state='normal',bg=G_active_btn_col)
         if len(self.diffs) > 0:
             for diff in self.diffs:
                 for component in diff:
